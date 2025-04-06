@@ -26,23 +26,19 @@ class MenuScene extends Phaser.Scene {
         this.add.image(400, 300, 'madera').setScale(1.2);
         this.add.text(250, 100, 'Selecciona un Mapa', { fontSize: '32px', fill: '#ffffff' });
 
-        let rioButton = this.add.text(350, 200, 'Rio', { fontSize: '24px', fill: '#00ff00' }).setInteractive();
-        let galaxiaButton = this.add.text(350, 250, 'Galaxia', { fontSize: '24px', fill: '#00ffff' }).setInteractive();
-        let mercadoButton = this.add.text(350, 300, 'Mercado', { fontSize: '24px', fill: '#ffcc00' }).setInteractive();
-
-        rioButton.on('pointerdown', () => this.startGame('rio'));
-        galaxiaButton.on('pointerdown', () => this.startGame('galaxia'));
-        mercadoButton.on('pointerdown', () => this.startGame('mercado'));
+        const maps = ['rio', 'galaxia', 'mercado'];
+        maps.forEach((map, index) => {
+            this.add.text(350, 200 + index * 50, map.charAt(0).toUpperCase() + map.slice(1), { fontSize: '24px', fill: '#ffffff' })
+                .setInteractive()
+                .on('pointerdown', () => this.startGame(map));
+        });
 
         this.music = this.sound.add('musica', { loop: true, volume: 0.5 });
         this.music.play();
- // Botón de mute
+
         this.isMuted = false;
         this.muteButton = this.add.text(730, 10, '🔊', {
-            fontSize: '24px',
-            fill: '#ffffff',
-            backgroundColor: '#000000',
-            padding: { x: 10, y: 5 }
+            fontSize: '24px', fill: '#ffffff', backgroundColor: '#000000', padding: { x: 10, y: 5 }
         }).setInteractive();
 
         this.muteButton.on('pointerdown', () => {
@@ -50,9 +46,57 @@ class MenuScene extends Phaser.Scene {
             this.sound.mute = this.isMuted;
             this.muteButton.setText(this.isMuted ? '🔇' : '🔊');
         });
-}
+    }
+
     startGame(map) {
-        this.scene.start('TowerDefenseGame', { selectedMap: map });
+        this.scene.start('TowerDefenseGame', { selectedMap: map, difficulty: 'facil' });
+    }
+}
+
+class PauseMenu extends Phaser.Scene {
+    constructor() {
+        super({ key: 'PauseMenu' });
+    }
+
+    init(data) {
+        this.prevScene = data.prevScene;
+        this.music = data.music;
+        this.difficulty = data.difficulty;
+    }
+
+    create() {
+        this.add.rectangle(400, 300, 400, 300, 0x000000, 0.8);
+        this.add.text(320, 180, 'PAUSA', { fontSize: '32px', fill: '#ffffff' });
+
+        this.add.text(340, 240, 'Volver al menú', { fontSize: '20px', fill: '#00ff00' }).setInteractive()
+            .on('pointerdown', () => {
+                this.scene.stop('TowerDefenseGame');
+                this.scene.start('MenuScene');
+            });
+
+        this.add.text(340, 280, this.sound.mute ? 'Activar Sonido' : 'Silenciar Sonido', { fontSize: '20px', fill: '#00ffff' })
+            .setInteractive()
+            .on('pointerdown', () => {
+                this.sound.mute = !this.sound.mute;
+                this.scene.restart({ prevScene: this.prevScene, music: this.music, difficulty: this.difficulty });
+            });
+
+        const diffText = this.difficulty === 'facil' ? 'Dificultad: Fácil' : 'Dificultad: Difícil';
+        this.add.text(340, 320, diffText, { fontSize: '20px', fill: '#ffcc00' })
+            .setInteractive()
+            .on('pointerdown', () => {
+                const newDiff = this.difficulty === 'facil' ? 'dificil' : 'facil';
+                this.scene.stop('TowerDefenseGame');
+                this.scene.start('TowerDefenseGame', {
+                    selectedMap: this.prevScene.selectedMap,
+                    difficulty: newDiff
+                });
+            });
+
+        this.input.keyboard.once('keydown-P', () => {
+            this.scene.stop();
+            this.scene.resume('TowerDefenseGame');
+        });
     }
 }
 
@@ -63,10 +107,10 @@ class TowerDefenseGame extends Phaser.Scene {
 
     init(data) {
         this.selectedMap = data.selectedMap;
-        this.round = 1; // Contador de rondas
-        this.enemiesDefeated = 0; // Contador de enemigos derrotados
-        this.initialEnemiesPerRound = 1; // Número de enemigos en la primera ronda
-        this.enemySpawnInterval = 2; // Intervalo de aparición inicial
+        this.difficulty = data.difficulty || 'facil';
+        this.round = 1;
+        this.enemiesDefeated = 0;
+        this.enemySpawnInterval = this.difficulty === 'facil' ? 3000 : 1500;
     }
 
     preload() {
@@ -82,8 +126,8 @@ class TowerDefenseGame extends Phaser.Scene {
         this.lives = 100;
         this.money = 100;
         this.selectedTower = null;
-        this.add.image(400, 300, this.selectedMap).setScale(1);
 
+        this.add.image(400, 300, this.selectedMap).setScale(1);
         this.path = this.createPath();
         this.graphics = this.add.graphics();
         this.drawPath();
@@ -92,7 +136,6 @@ class TowerDefenseGame extends Phaser.Scene {
         this.towers = [];
         this.bullets = this.add.group();
 
-        // Temporizador para spawn de enemigos
         this.spawnTimer = this.time.addEvent({
             delay: this.enemySpawnInterval,
             callback: this.spawnEnemy,
@@ -111,21 +154,26 @@ class TowerDefenseGame extends Phaser.Scene {
         });
 
         this.infoText = this.add.text(10, 10, '', { fontSize: '18px', fill: '#ffffff' });
-        this.roundText = this.add.text(10, 50, `Ronda: ${this.round}`, { fontSize: '24px', fill: '#ffffff' });
+        this.roundText = this.add.text(10, 40, '', { fontSize: '24px', fill: '#ffffff' });
+
+        this.displayRound();
 
         this.music = this.sound.get('musica');
-        if (this.music && !this.music.isPlaying) {
-            this.music.play();
-        }
+        if (this.music && !this.music.isPlaying) this.music.play();
+
+        this.input.keyboard.on('keydown-P', () => {
+            this.scene.launch('PauseMenu', {
+                prevScene: this,
+                music: this.music,
+                difficulty: this.difficulty
+            });
+            this.scene.pause();
+        });
     }
 
     createPath() {
         let path = this.add.path(50, 100);
-        path.lineTo(150, 150);
-        path.lineTo(300, 250);
-        path.lineTo(400, 350);
-        path.lineTo(550, 400);
-        path.lineTo(750, 500);
+        path.lineTo(150, 150).lineTo(300, 250).lineTo(400, 350).lineTo(550, 400).lineTo(750, 500);
         return path;
     }
 
@@ -135,98 +183,57 @@ class TowerDefenseGame extends Phaser.Scene {
     }
 
     spawnEnemy() {
-        // Generar un nuevo enemigo
-        let enemyType = Phaser.Math.RND.pick(['verde', 'azul', 'rojo']);
-        let enemySprite = this.add.sprite(0, 0, enemyType).setScale(0.5);
-        
-        let enemy = {
-            sprite: enemySprite,
+        const type = Phaser.Math.RND.pick(['verde', 'azul', 'rojo']);
+        const enemy = {
+            sprite: this.add.sprite(0, 0, type).setScale(0.5),
             t: 0,
             speed: 1 / 5000,
             dead: false,
-            lives: enemyType === 'verde' ? 3 : (enemyType === 'azul' ? 2 : 1)
+            lives: type === 'verde' ? 3 : (type === 'azul' ? 2 : 1)
         };
 
         this.enemies.push(enemy);
-
-        // Controlar el número de enemigos si se han derrotado suficientes
         this.enemiesDefeated++;
+
         if (this.enemiesDefeated >= 10) {
             this.round++;
+            this.enemiesDefeated = 0;
+            this.enemySpawnInterval = Math.max(1000, this.enemySpawnInterval * 0.9);
+            this.spawnTimer.delay = this.enemySpawnInterval;
             this.displayRound();
-            this.enemiesDefeated = 0; // Reiniciar el contador de enemigos derrotados
-
-            // Aumentar la velocidad de aparición de enemigos cada ronda
-            this.enemySpawnInterval = Math.max(2000, this.enemySpawnInterval * 0.9); // Minimum 2 segundos
-            this.spawnTimer.delay = this.enemySpawnInterval; // Actualizar el temporizador de spawn
-            
-            if (this.round % 10 === 0) {
-                this.spawnBoss(); // Llama a la función para hacer aparecer un jefe
-            }
-
-            // Si se llega a la ronda 100
-            if (this.round > 100) {
-                this.showWinScreen();
-                return;
-            }
+            if (this.round % 10 === 0) this.spawnBoss();
         }
+    }
+
+    spawnBoss() {
+        const bossType = Phaser.Math.RND.pick(['verde', 'azul', 'rojo']);
+        const boss = {
+            sprite: this.add.sprite(0, 0, bossType).setScale(1),
+            t: 0,
+            speed: 1 / 3000,
+            dead: false,
+            lives: 10
+        };
+        this.enemies.push(boss);
     }
 
     displayRound() {
         this.roundText.setText(`Ronda: ${this.round}`);
     }
 
-    showWinScreen() {
-        this.spawnTimer.remove();
-        this.add.text(250, 250, '¡Has ganado!', { fontSize: '48px', fill: '#00ff00' });
-        this.add.text(200, 350, 'Volver al menú...', { fontSize: '32px', fill: '#ffffff' });
-
-        this.time.addEvent({
-            delay: 3000,
-            callback: () => {
-                this.scene.start('MenuScene');
-            },
-            callbackScope: this
-        });
-    }
-
-    spawnBoss() {
-        let bossType = Phaser.Math.RND.pick(['verde', 'azul', 'rojo']);
-        let enemySprite = this.add.sprite(0, 0, bossType).setScale(1); // Cambia el tamaño del jefe
-        let boss = {
-            sprite: enemySprite,
-            t: 0,
-            speed: 1 / 3000, // Jefe lento
-            dead: false,
-            lives: 10 // 10 de vida para el jefe
-        };
-        this.enemies.push(boss);
-    }
-
     createUI() {
         this.add.rectangle(400, 550, 800, 100, 0x222222);
-        let tower1Button = this.add.image(350, 550, 'morada').setScale(0.5).setInteractive();
-        let tower2Button = this.add.image(450, 550, 'amarilla').setScale(0.5).setInteractive();
+        const tower1 = this.add.image(350, 550, 'morada').setScale(0.5).setInteractive();
+        const tower2 = this.add.image(450, 550, 'amarilla').setScale(0.5).setInteractive();
 
-        tower1Button.on('pointerdown', () => {
-            if (this.money >= 50) {
-                this.selectedTower = 'morada';
-                this.money -= 50;
-            }
-        });
-
-        tower2Button.on('pointerdown', () => {
-            if (this.money >= 100) {
-                this.selectedTower = 'amarilla';
-                this.money -= 100;
-            }
-        });
+        tower1.on('pointerdown', () => { if (this.money >= 50) { this.selectedTower = 'morada'; this.money -= 50; } });
+        tower2.on('pointerdown', () => { if (this.money >= 100) { this.selectedTower = 'amarilla'; this.money -= 100; } });
     }
 
     setupTowerPlacement() {
-        this.input.on('pointerdown', (pointer) => {
+        this.input.on('pointerdown', pointer => {
             if (this.selectedTower && pointer.y < 500) {
-                let tower = this.add.sprite(pointer.x, pointer.y, this.selectedTower).setScale(0.5);
+                const tower = this.add.sprite(pointer.x, pointer.y, this.selectedTower).setScale(0.5);
                 this.towers.push(tower);
                 this.selectedTower = null;
             }
@@ -235,63 +242,55 @@ class TowerDefenseGame extends Phaser.Scene {
 
     shootFromTowers() {
         this.towers.forEach(tower => {
-            let closest = null;
-            let minDist = 150;
+            let target = null, minDist = 150;
 
             this.enemies.forEach(enemy => {
-                if (enemy.dead) return;
-                let dist = Phaser.Math.Distance.Between(tower.x, tower.y, enemy.sprite.x, enemy.sprite.y);
-                if (dist < minDist) {
-                    minDist = dist;
-                    closest = enemy;
+                if (!enemy.dead) {
+                    const dist = Phaser.Math.Distance.Between(tower.x, tower.y, enemy.sprite.x, enemy.sprite.y);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        target = enemy;
+                    }
                 }
             });
 
-            if (closest) {
-                const damage = tower.texture.key === 'morada' ? 1 : 3; // Daño según el tipo de torre
+            if (target) {
+                const damage = tower.texture.key === 'morada' ? 1 : 2;
                 const bullet = this.add.image(tower.x, tower.y, 'bala').setScale(0.3);
-                const dx = closest.sprite.x - tower.x;
-                const dy = closest.sprite.y - tower.y;
-                const angle = Math.atan2(dy, dx);
+                const angle = Phaser.Math.Angle.Between(tower.x, tower.y, target.sprite.x, target.sprite.y);
                 const speed = 300;
 
                 bullet.setRotation(angle);
                 bullet.vx = Math.cos(angle) * speed;
                 bullet.vy = Math.sin(angle) * speed;
-                bullet.target = closest;
-                bullet.damage = damage; // Asigna daño a la bala
+                bullet.target = target;
+                bullet.damage = damage;
 
-                bullet.update = (delta) => {
+                bullet.update = delta => {
                     bullet.x += bullet.vx * delta;
                     bullet.y += bullet.vy * delta;
 
                     if (bullet.target && !bullet.target.dead) {
-                        const dist = Phaser.Math.Distance.Between(
-                            bullet.x, bullet.y,
-                            bullet.target.sprite.x, bullet.target.sprite.y
-                        );
+                        const dist = Phaser.Math.Distance.Between(bullet.x, bullet.y, bullet.target.sprite.x, bullet.target.sprite.y);
                         if (dist < 35) {
                             bullet.destroy();
-                            // Restamos vida según el daño de la bala
                             bullet.target.lives -= bullet.damage;
+
                             if (bullet.target.lives <= 0) {
-                                this.money += 10; // Recompensa por eliminar un enemigo
-                                // Transformar el enemigo
                                 if (bullet.target.sprite.texture.key === 'verde') {
                                     bullet.target.sprite.setTexture('azul');
-                                    bullet.target.lives = 2; 
+                                    bullet.target.lives = 2;
                                 } else if (bullet.target.sprite.texture.key === 'azul') {
                                     bullet.target.sprite.setTexture('rojo');
-                                    bullet.target.lives = 1; 
+                                    bullet.target.lives = 1;
                                 } else {
                                     bullet.target.dead = true;
                                     bullet.target.sprite.destroy();
+                                    this.money += 10;
                                 }
                             }
                         }
-                    } else {
-                        bullet.destroy();
-                    }
+                    } else bullet.destroy();
                 };
 
                 this.bullets.add(bullet);
@@ -299,29 +298,23 @@ class TowerDefenseGame extends Phaser.Scene {
         });
     }
 
-    update(time, delta) {
-        // Movimiento de enemigos
+    update(_, delta) {
         this.enemies.forEach(enemy => {
             if (!enemy.dead) {
                 enemy.t += enemy.speed * delta;
                 if (enemy.t >= 1) {
                     enemy.dead = true;
                     enemy.sprite.destroy();
-                    this.lives -= 1; // Pérdida de vidas del jugador
-                    if (this.lives <= 0) this.scene.start('MenuScene'); // Finalizar si se muere
+                    this.lives--;
+                    if (this.lives <= 0) this.scene.start('MenuScene');
                 } else {
-                    let point = this.path.getPoint(enemy.t);
+                    const point = this.path.getPoint(enemy.t);
                     enemy.sprite.setPosition(point.x, point.y);
                 }
             }
         });
 
-        // Actualizar balas
-        this.bullets.getChildren().forEach(bullet => {
-            if (bullet.update) bullet.update(delta / 1000);
-        });
-
-        // Actualizar HUD
+        this.bullets.getChildren().forEach(b => b.update && b.update(delta / 1000));
         this.infoText.setText(`Vidas: ${this.lives} | Dinero: $${this.money}`);
     }
 }
@@ -330,12 +323,12 @@ const config = {
     type: Phaser.AUTO,
     width: 800,
     height: 600,
-    scene: [MenuScene, TowerDefenseGame],
-    physics: { default: 'arcade' },
-    parent: document.body
+    scene: [MenuScene, TowerDefenseGame, PauseMenu],
+    parent: document.body,
+    physics: { default: 'arcade' }
 };
 
-const game = new Phaser.Game(config);
+new Phaser.Game(config);
 </script>
 </body>
 </html>
