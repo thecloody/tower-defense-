@@ -36,8 +36,21 @@ class MenuScene extends Phaser.Scene {
 
         this.music = this.sound.add('musica', { loop: true, volume: 0.5 });
         this.music.play();
-    }
+ // Botón de mute
+        this.isMuted = false;
+        this.muteButton = this.add.text(730, 10, '🔊', {
+            fontSize: '24px',
+            fill: '#ffffff',
+            backgroundColor: '#000000',
+            padding: { x: 10, y: 5 }
+        }).setInteractive();
 
+        this.muteButton.on('pointerdown', () => {
+            this.isMuted = !this.isMuted;
+            this.sound.mute = this.isMuted;
+            this.muteButton.setText(this.isMuted ? '🔇' : '🔊');
+        });
+}
     startGame(map) {
         this.scene.start('TowerDefenseGame', { selectedMap: map });
     }
